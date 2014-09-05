@@ -61,6 +61,7 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="com.qti.permission.DIAG" />
     <uses-permission android:name="com.qti.permission.IMS" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
         android:name="DialerApplication"
@@ -114,6 +115,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="tel" />
+                <data android:scheme="sip" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.CALL_BUTTON" />
@@ -289,6 +291,14 @@
             </intent-filter>
         </receiver>
 
+        <activity android:name=".SpeedDialListActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+            android:label="@string/set_speed_dial" >
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+            </intent-filter>
+        </activity>
+
         <receiver android:name=".interactions.UndemoteOutgoingCallReceiver">
             <intent-filter>
                 <action android:name="android.intent.action.NEW_OUTGOING_CALL" />
@@ -337,6 +347,10 @@
             <intent-filter>
                 <action android:name="com.android.services.telephony.common.ICallHandlerService" />
             </intent-filter>
+        </service>
+
+        <service android:name="com.android.services.callrecorder.CallRecorderService"
+                 android:process="com.android.incallui">
         </service>
 
         <!-- BroadcastReceiver for receiving Intents from Notification mechanism. -->

@@ -62,10 +62,13 @@ import com.android.dialer.calllog.PhoneNumberDisplayHelper;
 import com.android.dialer.calllog.PhoneNumberUtilsWrapper;
 import com.android.dialer.util.AsyncTaskExecutor;
 import com.android.dialer.util.AsyncTaskExecutors;
+import com.android.dialer.util.CallRecordingPlayer;
 import com.android.dialer.voicemail.VoicemailPlaybackFragment;
 import com.android.dialer.voicemail.VoicemailStatusHelper;
 import com.android.dialer.voicemail.VoicemailStatusHelper.StatusMessage;
 import com.android.dialer.voicemail.VoicemailStatusHelperImpl;
+import com.android.services.callrecorder.CallRecordingDataStore;
+import com.android.internal.telephony.MSimConstants;
 
 import java.util.List;
 
@@ -110,6 +113,7 @@ public class CallDetailActivity extends Activity implements ProximitySensorAware
 
     private String mNumber = null;
     private String mDefaultCountryIso;
+    private int mSubscription;
 
     /* package */ LayoutInflater mInflater;
     /* package */ Resources mResources;
@@ -128,9 +132,14 @@ public class CallDetailActivity extends Activity implements ProximitySensorAware
     private boolean mHasTrashOption;
     /** Whether we should show "remove from call log" in the options menu. */
     private boolean mHasRemoveFromCallLogOption;
+    /** Whether we should show "add to blacklist" in the options menu. */
+    private boolean mHasAddToBlacklistOption;
 
     private ProximitySensorManager mProximitySensorManager;
     private final ProximitySensorListener mProximitySensorListener = new ProximitySensorListener();
+
+    private CallRecordingDataStore mCallRecordingDataStore = new CallRecordingDataStore();
+    private CallRecordingPlayer mCallRecordingPlayer = new CallRecordingPlayer();
 
     /** Listener to changes in the proximity sensor state. */
     private class ProximitySensorListener implements ProximitySensorManager.Listener {
@@ -191,6 +200,8 @@ public class CallDetailActivity extends Activity implements ProximitySensorAware
         CallLog.Calls.COUNTRY_ISO,
         CallLog.Calls.GEOCODED_LOCATION,
         CallLog.Calls.NUMBER_PRESENTATION,
+        CallLog.Calls.SUBSCRIPTION,
+        CallLog.Calls.DURATION_TYPE
     };
 
     static final int DATE_COLUMN_INDEX = 0;
@@ -200,6 +211,8 @@ public class CallDetailActivity extends Activity implements ProximitySensorAware
     static final int COUNTRY_ISO_COLUMN_INDEX = 4;
     static final int GEOCODED_LOCATION_COLUMN_INDEX = 5;
     static final int NUMBER_PRESENTATION_COLUMN_INDEX = 6;
+    static final int SUBSCRIPTION = 7;
+    static final int DURATION_TYPE_COLUMN_INDEX = 8;
 
     @Override
     protected void onCreate(Bundle icicle) {
@@ -214,7 +227,7 @@ public class CallDetailActivity extends Activity implements ProximitySensorAware
         mCallTypeHelper = new CallTypeHelper(getResources());
         mPhoneNumberHelper = new PhoneNumberDisplayHelper(mResources);
         mCallDetailHeader = new CallDetailHeader(this, mPhoneNumberHelper);
-        mPhoneCallDetailsHelper = new PhoneCallDetailsHelper(mResources, mCallTypeHelper,
+        mPhoneCallDetailsHelper = new PhoneCallDetailsHelper(this, mCallTypeHelper,
                 new PhoneNumberUtilsWrapper());
         mVoicemailStatusHelper = new VoicemailStatusHelperImpl();
         mAsyncQueryHandler = new CallDetailActivityQueryHandler(this);
@@ -230,6 +243,13 @@ public class CallDetailActivity extends Activity implements ProximitySensorAware
         if (getIntent().getBooleanExtra(EXTRA_FROM_NOTIFICATION, false)) {
             closeSystemDialogs();
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        mCallRecordingDataStore.close();
+        mCallRecordingPlayer.stop();
     }
 
     @Override
@@ -362,14 +382,16 @@ public class CallDetailActivity extends Activity implements ProximitySensorAware
                 PhoneCallDetails firstDetails = details[0];
                 mNumber = firstDetails.number.toString();
                 final int numberPresentation = firstDetails.numberPresentation;
+                mSubscription = firstDetails.subscription;
 
                 // Set the details header, based on the first phone call.
                 mPhoneCallDetailsHelper.setCallDetailsHeader(mHeaderTextView, firstDetails);
-                mCallDetailHeader.updateViews(mNumber, numberPresentation, firstDetails);
+                mCallDetailHeader.updateViews(mNumber, numberPresentation, firstDetails, mSubscription);
 
                 mHasEditNumberBeforeCallOption = mCallDetailHeader.canEditNumberBeforeCall();
                 mHasTrashOption = hasVoicemail();
                 mHasRemoveFromCallLogOption = !hasVoicemail();
+                mHasAddToBlacklistOption = mCallDetailHeader.canPlaceCallsTo();
                 invalidateOptionsMenu();
 
                 ListView historyList = (ListView) findViewById(R.id.history);
@@ -377,7 +399,8 @@ public class CallDetailActivity extends Activity implements ProximitySensorAware
                         new CallDetailHistoryAdapter(CallDetailActivity.this, mInflater,
                                 mCallTypeHelper, details, hasVoicemail(),
                                 mCallDetailHeader.canPlaceCallsTo(),
-                                findViewById(R.id.controls)));
+                                findViewById(R.id.controls),
+                                mCallRecordingDataStore, mCallRecordingPlayer));
                 BackScrollManager.bind(
                         new ScrollableHeader() {
                             private View mControls = findViewById(R.id.controls);
@@ -451,6 +474,8 @@ public class CallDetailActivity extends Activity implements ProximitySensorAware
             final int callType = callCursor.getInt(CALL_TYPE_COLUMN_INDEX);
             String countryIso = callCursor.getString(COUNTRY_ISO_COLUMN_INDEX);
             final String geocode = callCursor.getString(GEOCODED_LOCATION_COLUMN_INDEX);
+            final int subscription = callCursor.getInt(SUBSCRIPTION);
+            int durationType = callCursor.getInt(DURATION_TYPE_COLUMN_INDEX);
 
             if (TextUtils.isEmpty(countryIso)) {
                 countryIso = mDefaultCountryIso;
@@ -492,7 +517,8 @@ public class CallDetailActivity extends Activity implements ProximitySensorAware
             return new PhoneCallDetails(number, numberPresentation,
                     formattedNumber, countryIso, geocode,
                     new int[]{ callType }, date, duration,
-                    nameText, numberType, numberLabel, lookupUri, photoUri, sourceType);
+                    nameText, numberType, numberLabel, lookupUri, photoUri, sourceType, 
+                    subscription, durationType);
         } finally {
             if (callCursor != null) {
                 callCursor.close();
@@ -553,10 +579,15 @@ public class CallDetailActivity extends Activity implements ProximitySensorAware
     public boolean onPrepareOptionsMenu(Menu menu) {
         // This action deletes all elements in the group from the call log.
         // We don't have this action for voicemails, because you can just use the trash button.
+        menu.findItem(R.id.menu_calllog_detail_video_call).setVisible(mCallDetailHeader.hasVideoCallOption());
         menu.findItem(R.id.menu_remove_from_call_log).setVisible(mHasRemoveFromCallLogOption);
         menu.findItem(R.id.menu_edit_number_before_call).setVisible(mHasEditNumberBeforeCallOption);
+        menu.findItem(R.id.menu_add_to_blacklist).setVisible(mHasAddToBlacklistOption);
         menu.findItem(R.id.menu_trash).setVisible(mHasTrashOption);
         return super.onPrepareOptionsMenu(menu);
+    }
+    public void onMenuVTCall(MenuItem menuItem) {
+        startActivity(CallDetailHeader.getVTCallIntent(mNumber));
     }
 
     public void onMenuRemoveFromCallLog(MenuItem menuItem) {

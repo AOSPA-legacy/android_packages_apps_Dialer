@@ -151,7 +151,8 @@ public class CallStatsDetailActivity extends Activity {
 
         // Set the details header, based on the first phone call.
         mCallStatsDetailHelper.setCallStatsDetailHeader(mHeaderTextView, mData);
-        mCallDetailHeader.updateViews(mNumber, mData.numberPresentation, mData);
+        // TODO: can we pass subscription from here?
+        mCallDetailHeader.updateViews(mNumber, mData.numberPresentation, mData, -1);
 
         final CharSequence displayNumber =
             mPhoneNumberDisplayHelper.getDisplayNumber(
@@ -256,6 +257,8 @@ public class CallStatsDetailActivity extends Activity {
     public boolean onPrepareOptionsMenu(Menu menu) {
         menu.findItem(R.id.menu_edit_number_before_call).setVisible(
                 mCallDetailHeader.canEditNumberBeforeCall());
+        menu.findItem(R.id.menu_add_to_blacklist).setVisible(
+                mCallDetailHeader.canPlaceCallsTo());
         return super.onPrepareOptionsMenu(menu);
     }
 

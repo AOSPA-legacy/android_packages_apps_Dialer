@@ -36,6 +36,7 @@ import com.android.dialer.lookup.LookupCache;
 import com.android.dialer.service.CachedNumberLookupService;
 import com.android.dialer.service.CachedNumberLookupService.CachedContactInfo;
 import com.android.dialerbind.ObjectFactory;
+import com.android.internal.telephony.util.BlacklistUtils;
 
 import org.json.JSONException;
 import org.json.JSONObject;
