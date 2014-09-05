@@ -582,7 +582,6 @@ public class CallDetailActivity extends Activity implements ProximitySensorAware
         menu.findItem(R.id.menu_calllog_detail_video_call).setVisible(mCallDetailHeader.hasVideoCallOption());
         menu.findItem(R.id.menu_remove_from_call_log).setVisible(mHasRemoveFromCallLogOption);
         menu.findItem(R.id.menu_edit_number_before_call).setVisible(mHasEditNumberBeforeCallOption);
-        menu.findItem(R.id.menu_add_to_blacklist).setVisible(mHasAddToBlacklistOption);
         menu.findItem(R.id.menu_trash).setVisible(mHasTrashOption);
         return super.onPrepareOptionsMenu(menu);
     }
